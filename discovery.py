@@ -1,25 +1,24 @@
-from pm4py.objects.log.importer.xes import importer as xes_importer
-from pm4py.objects.dfg.exporter import exporter as dfg_exporter
-import log_parser 
+from statistics import median
+import log_parser, dfg_utils, stat_utils
 from pm4py.algo.discovery.dfg import algorithm as dfg_discovery
-from pm4py.statistics.start_activities.log import get as start_activities
-from pm4py.statistics.end_activities.log import get as end_activities
 
+def calc_for_order_with_deviations(k,log):
+    log = log_parser.prepare_log(log, k)
+    log_activities=log_parser.log_activities(log)
+    dfg = dfg_discovery.apply(log, variant=dfg_discovery.Variants.FREQUENCY)
+    dfg["end", "start"] = 1
+    limiting_probabilities = dfg_utils.calculate_limiting_probabilities(dfg, log_activities)
+    times = log_parser.calculate_times(log) 
+    means = stat_utils.calculate_means(dfg,times,log_activities)
+    st_dev = stat_utils.calculate_standard_deviation_times(dfg,times,log_activities)
+    deviated = {}
+    for i in means:
+        deviated[i] = means[i] + st_dev[i]
+    real_overall_time = log_parser.calculate_real_overall_time(log) 
+    dev_overall_time = 0
+    for i in range(0, len(log_activities)):
+        dev_overall_time += limiting_probabilities[log_activities[i]]*deviated[log_activities[i]]
+    dev_overall_time /= limiting_probabilities['start']
+    return real_overall_time, dev_overall_time, len(log_activities), 1, limiting_probabilities, means
 
-variant = xes_importer.Variants.ITERPARSE
-parameters = {variant.value.Parameters.TIMESTAMP_SORT: True}
-log = xes_importer.apply('Documents/TS Discovery/bpi_challenge_2013_incidents.xes', 
-    variant=variant, parameters=parameters)
-log = log_parser.parse(log, 3)
-sa = start_activities.get_start_activities(log)
-ea = end_activities.get_end_activities(log)
-
-
-dfg = dfg_discovery.apply(log, variant=dfg_discovery.Variants.FREQUENCY)
-
-for start in sa:
-    for end in ea:
-        dfg[end, start] += sa[start]
-
-dfg_exporter.apply(dfg, 'Documents/TS Discovery/output.dfg', parameters={dfg_exporter.Variants.CLASSIC.value.Parameters.START_ACTIVITIES: sa,
-                                   dfg_exporter.Variants.CLASSIC.value.Parameters.END_ACTIVITIES: ea})
+    
